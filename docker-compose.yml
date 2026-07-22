@@ -1,0 +1,211 @@
+name: peaker-app
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:4.3.3-management-alpine
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - '5672:5672' # RabbitMQ port
+      - '15672:15672' # Management UI
+    env_file:
+      - ./config/auth-service.env
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- auth ----------------
+  auth-service:
+    container_name: auth-service
+    build:
+      context: ./../auth-service/AuthService
+      dockerfile: AuthService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/auth-service.env
+    ports:
+      - '8081:8080'
+    depends_on:
+      db-auth-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  db-auth-service:
+    container_name: db-auth-service
+    image: mariadb:13.0.1-ubi10-rc
+    restart: always
+    env_file:
+      - ./config/auth-service.env
+    ports:
+      - '3307:3306'
+    volumes:
+      # This volume is used to persist the database data
+      - db-auth-service:/var/lib/mysql
+      # Script to initialize the database
+      - ./scripts/auth-service:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- account ----------------
+  account-service:
+    container_name: account-service
+    build:
+      context: ./../account-service/AccountService
+      dockerfile: AccountService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/account-service.env
+    ports:
+      - '8082:8080'
+    depends_on:
+      db-account-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  db-account-service:
+    container_name: db-account-service
+    image: mariadb:13.0.1-ubi10-rc
+    restart: always
+    env_file:
+      - ./config/account-service.env
+    ports:
+      - '3308:3306'
+    volumes:
+      - db-account-service:/var/lib/mysql
+      - ./scripts/account-service:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- peak ----------------
+  peak-service:
+    container_name: peak-service
+    build:
+      context: ./../peak-service/PeakService
+      dockerfile: PeakService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/peak-service.env
+    ports:
+      - '8083:8080'
+    depends_on:
+      db-peak-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  db-peak-service:
+    container_name: db-peak-service
+    image: postgis/postgis:16-3.4
+    restart: always
+    env_file:
+      - ./config/peak-service.env
+    ports:
+      - '5433:5432'
+    volumes:
+      - db-peak-service:/var/lib/postgresql/data
+      - ./scripts/peak-service:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- ascent ----------------
+  ascent-service:
+    container_name: ascent-service
+    build:
+      context: ./../ascent-service/AscentService
+      dockerfile: AscentService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/ascent-service.env
+    ports:
+      - '8084:8080'
+    depends_on:
+      db-ascent-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  db-ascent-service:
+    container_name: db-ascent-service
+    image: postgres:16-alpine
+    restart: always
+    env_file:
+      - ./config/ascent-service.env
+    ports:
+      - '5434:5432'
+    volumes:
+      - db-ascent-service:/var/lib/postgresql/data
+      - ./scripts/ascent-service:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- gateway (placeholder) ----------------
+  # api-gateway aún no tiene código ni Dockerfile. Descomentar y ajustar
+  # context/dockerfile cuando exista el proyecto del gateway.
+  # gateway:
+  #   container_name: gateway
+  #   build:
+  #     context: ./../api-gateway/<Solucion>
+  #     dockerfile: <Proyecto>/Dockerfile
+  #   restart: always
+  #   env_file:
+  #     - ./config/gateway.env
+  #   ports:
+  #     - '8080:8080'
+  #   depends_on:
+  #     auth-service:
+  #       condition: service_started
+  #     account-service:
+  #       condition: service_started
+  #     peak-service:
+  #       condition: service_started
+  #     ascent-service:
+  #       condition: service_started
+
+  # ---------------- calidad (perfil quality) ----------------
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    profiles: ["quality"]
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+
+volumes:
+  db-auth-service:
+  db-account-service:
+  db-peak-service:
+  db-ascent-service:
+  rabbitmq:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:

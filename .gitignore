@@ -1,0 +1,6 @@
+# Environment file database
+*.env
+
+# Scripts to deploy the databases
+scripts/**/*.sql
+scripts/**/*.js
