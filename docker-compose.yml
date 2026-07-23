@@ -39,7 +39,7 @@ services:
 
   db-auth-service:
     container_name: db-auth-service
-    image: mariadb:13.0.1-ubi10-rc
+    image: mysql:8.4
     restart: always
     env_file:
       - ./config/auth-service.env
@@ -51,7 +51,7 @@ services:
       # Script to initialize the database
       - ./scripts/auth-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -76,7 +76,7 @@ services:
 
   db-account-service:
     container_name: db-account-service
-    image: mariadb:13.0.1-ubi10-rc
+    image: mysql:8.4
     restart: always
     env_file:
       - ./config/account-service.env
@@ -86,7 +86,7 @@ services:
       - db-account-service:/var/lib/mysql
       - ./scripts/account-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -162,28 +162,20 @@ services:
       retries: 10
       start_period: 20s
 
-  # ---------------- gateway (placeholder) ----------------
-  # api-gateway aún no tiene código ni Dockerfile. Descomentar y ajustar
-  # context/dockerfile cuando exista el proyecto del gateway.
-  # gateway:
-  #   container_name: gateway
-  #   build:
-  #     context: ./../api-gateway/<Solucion>
-  #     dockerfile: <Proyecto>/Dockerfile
-  #   restart: always
-  #   env_file:
-  #     - ./config/gateway.env
-  #   ports:
-  #     - '8080:8080'
-  #   depends_on:
-  #     auth-service:
-  #       condition: service_started
-  #     account-service:
-  #       condition: service_started
-  #     peak-service:
-  #       condition: service_started
-  #     ascent-service:
-  #       condition: service_started
+  # ---------------- gateway ----------------
+  gateway:
+    container_name: gateway
+    build:
+      context: ./../api-gateway/ApiGateway
+      dockerfile: ApiGateway/Dockerfile
+    restart: always
+    env_file:
+      - ./config/gateway.env
+    ports:
+      - '8080:8080'
+    depends_on:
+      auth-service:
+        condition: service_started
 
   # ---------------- calidad (perfil quality) ----------------
   sonarqube:
