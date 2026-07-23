@@ -24,8 +24,8 @@ services:
   auth-service:
     container_name: auth-service
     build:
-      context: ./../auth-service/AuthService
-      dockerfile: AuthService.API/Dockerfile
+      context: ..
+      dockerfile: auth-service/AuthService/AuthService.API/Dockerfile
     restart: always
     env_file:
       - ./config/auth-service.env
@@ -51,7 +51,7 @@ services:
       # Script to initialize the database
       - ./scripts/auth-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -60,6 +60,7 @@ services:
   # ---------------- account ----------------
   account-service:
     container_name: account-service
+    profiles: ["future"]
     build:
       context: ./../account-service/AccountService
       dockerfile: AccountService.API/Dockerfile
@@ -76,6 +77,7 @@ services:
 
   db-account-service:
     container_name: db-account-service
+    profiles: ["future"]
     image: mysql:8.4
     restart: always
     env_file:
@@ -86,7 +88,7 @@ services:
       - db-account-service:/var/lib/mysql
       - ./scripts/account-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -95,6 +97,7 @@ services:
   # ---------------- peak ----------------
   peak-service:
     container_name: peak-service
+    profiles: ["future"]
     build:
       context: ./../peak-service/PeakService
       dockerfile: PeakService.API/Dockerfile
@@ -111,6 +114,7 @@ services:
 
   db-peak-service:
     container_name: db-peak-service
+    profiles: ["future"]
     image: postgis/postgis:16-3.4
     restart: always
     env_file:
@@ -130,6 +134,7 @@ services:
   # ---------------- ascent ----------------
   ascent-service:
     container_name: ascent-service
+    profiles: ["future"]
     build:
       context: ./../ascent-service/AscentService
       dockerfile: AscentService.API/Dockerfile
@@ -146,6 +151,7 @@ services:
 
   db-ascent-service:
     container_name: db-ascent-service
+    profiles: ["future"]
     image: postgres:16-alpine
     restart: always
     env_file:
@@ -166,8 +172,8 @@ services:
   gateway:
     container_name: gateway
     build:
-      context: ./../api-gateway/ApiGateway
-      dockerfile: ApiGateway/Dockerfile
+      context: ..
+      dockerfile: api-gateway/ApiGateway/ApiGateway/Dockerfile
     restart: always
     env_file:
       - ./config/gateway.env
