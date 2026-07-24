@@ -177,26 +177,37 @@ services:
       start_period: 20s
 
   # ---------------- ascent ----------------
+  ascent-migrator:
+    container_name: ascent-migrator
+    build:
+      context: ..
+      dockerfile: ascent-service/AscentService/AscentService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/ascent-service.env
+    depends_on:
+      db-ascent-service:
+        condition: service_healthy
+
   ascent-service:
     container_name: ascent-service
-    profiles: ["future"]
     build:
-      context: ./../ascent-service/AscentService
-      dockerfile: AscentService.API/Dockerfile
+      context: ..
+      dockerfile: ascent-service/AscentService/AscentService.API/Dockerfile
     restart: always
     env_file:
       - ./config/ascent-service.env
     ports:
       - '8084:8080'
     depends_on:
-      db-ascent-service:
-        condition: service_healthy
+      ascent-migrator:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
   db-ascent-service:
     container_name: db-ascent-service
-    profiles: ["future"]
     image: postgres:16-alpine
     restart: always
     env_file:
@@ -229,6 +240,8 @@ services:
       account-service:
         condition: service_started
       peak-service:
+        condition: service_started
+      ascent-service:
         condition: service_started
 
   # ---------------- calidad (perfil quality) ----------------
