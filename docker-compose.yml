@@ -116,26 +116,51 @@ services:
       start_period: 20s
 
   # ---------------- peak ----------------
+  peak-migrator:
+    container_name: peak-migrator
+    build:
+      context: ..
+      dockerfile: peak-service/PeakService/PeakService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/peak-service.env
+    depends_on:
+      db-peak-service:
+        condition: service_healthy
+
   peak-service:
     container_name: peak-service
-    profiles: ["future"]
     build:
-      context: ./../peak-service/PeakService
-      dockerfile: PeakService.API/Dockerfile
+      context: ..
+      dockerfile: peak-service/PeakService/PeakService.API/Dockerfile
     restart: always
     env_file:
       - ./config/peak-service.env
     ports:
       - '8083:8080'
     depends_on:
-      db-peak-service:
-        condition: service_healthy
+      peak-migrator:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
+  peak-ingestion:
+    container_name: peak-ingestion
+    profiles: ["ingestion"]
+    build:
+      context: ..
+      dockerfile: peak-service/PeakService/PeakService.API/Dockerfile
+      target: worker
+    restart: "no"
+    env_file:
+      - ./config/peak-service.env
+    depends_on:
+      peak-migrator:
+        condition: service_completed_successfully
+
   db-peak-service:
     container_name: db-peak-service
-    profiles: ["future"]
     image: postgis/postgis:16-3.4
     restart: always
     env_file:
@@ -202,6 +227,8 @@ services:
       auth-service:
         condition: service_started
       account-service:
+        condition: service_started
+      peak-service:
         condition: service_started
 
   # ---------------- calidad (perfil quality) ----------------
