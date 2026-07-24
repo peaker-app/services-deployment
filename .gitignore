@@ -1,10 +1,6 @@
 # Environment file database
 *.env
 
-# Scripts to deploy the databases
-scripts/**/*.sql
-scripts/**/*.js
-
 # Created by https://www.toptal.com/developers/gitignore/api/aspnetcore,intellij,rider
 # Edit at https://www.toptal.com/developers/gitignore?templates=aspnetcore,intellij,rider
 

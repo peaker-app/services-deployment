@@ -21,6 +21,19 @@ services:
       start_period: 20s
 
   # ---------------- auth ----------------
+  auth-migrator:
+    container_name: auth-migrator
+    build:
+      context: ..
+      dockerfile: auth-service/AuthService/AuthService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/auth-service.env
+    depends_on:
+      db-auth-service:
+        condition: service_healthy
+
   auth-service:
     container_name: auth-service
     build:
@@ -32,8 +45,8 @@ services:
     ports:
       - '8081:8080'
     depends_on:
-      db-auth-service:
-        condition: service_healthy
+      auth-migrator:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
@@ -48,8 +61,6 @@ services:
     volumes:
       # This volume is used to persist the database data
       - db-auth-service:/var/lib/mysql
-      # Script to initialize the database
-      - ./scripts/auth-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
@@ -58,26 +69,37 @@ services:
       start_period: 20s
 
   # ---------------- account ----------------
+  account-migrator:
+    container_name: account-migrator
+    build:
+      context: ..
+      dockerfile: account-service/AccountService/AccountService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/account-service.env
+    depends_on:
+      db-account-service:
+        condition: service_healthy
+
   account-service:
     container_name: account-service
-    profiles: ["future"]
     build:
-      context: ./../account-service/AccountService
-      dockerfile: AccountService.API/Dockerfile
+      context: ..
+      dockerfile: account-service/AccountService/AccountService.API/Dockerfile
     restart: always
     env_file:
       - ./config/account-service.env
     ports:
       - '8082:8080'
     depends_on:
-      db-account-service:
-        condition: service_healthy
+      account-migrator:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
   db-account-service:
     container_name: db-account-service
-    profiles: ["future"]
     image: mysql:8.4
     restart: always
     env_file:
@@ -86,7 +108,6 @@ services:
       - '3308:3306'
     volumes:
       - db-account-service:/var/lib/mysql
-      - ./scripts/account-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
@@ -123,7 +144,6 @@ services:
       - '5433:5432'
     volumes:
       - db-peak-service:/var/lib/postgresql/data
-      - ./scripts/peak-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -160,7 +180,6 @@ services:
       - '5434:5432'
     volumes:
       - db-ascent-service:/var/lib/postgresql/data
-      - ./scripts/ascent-service:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
@@ -181,6 +200,8 @@ services:
       - '8080:8080'
     depends_on:
       auth-service:
+        condition: service_started
+      account-service:
         condition: service_started
 
   # ---------------- calidad (perfil quality) ----------------
