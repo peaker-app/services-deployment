@@ -244,6 +244,21 @@ services:
       ascent-service:
         condition: service_started
 
+  # ---------------- portal web (Next.js) ----------------
+  web:
+    container_name: web
+    build:
+      context: ../peaker-web/portal
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./config/web.env
+    ports:
+      - '3000:3000'
+    depends_on:
+      gateway:
+        condition: service_started
+
   # ---------------- calidad (perfil quality) ----------------
   sonarqube:
     image: sonarqube:community
