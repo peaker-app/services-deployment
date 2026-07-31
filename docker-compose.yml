@@ -53,6 +53,7 @@ services:
   db-auth-service:
     container_name: db-auth-service
     image: mysql:8.4
+    command: --innodb-buffer-pool-size=256M
     restart: always
     env_file:
       - ./config/auth-service.env
@@ -101,6 +102,7 @@ services:
   db-account-service:
     container_name: db-account-service
     image: mysql:8.4
+    command: --innodb-buffer-pool-size=256M
     restart: always
     env_file:
       - ./config/account-service.env
