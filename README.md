@@ -14,8 +14,8 @@ for f in *.env.example; do cp -n "$f" "${f%.example}"; done
 ```
 
 Completar en cada `.env` los valores vacíos: usuarios y contraseñas de las bases de datos,
-credenciales de RabbitMQ, `AuthToken__PrivateKeyPem`, la API key de Resend y las de Cloudinary.
-Después:
+credenciales de RabbitMQ, `AuthToken__PrivateKeyPem` y las de Cloudinary. El correo de confirmación
+no necesita ninguna credencial en local: sale por SMTP contra el contenedor `mailpit`. Después:
 
 ```bash
 docker compose up -d
@@ -36,6 +36,11 @@ docker compose --profile quality up -d sonarqube          # SonarQube en :9000
 | `db-auth-service` · `db-account-service` (MySQL) | 3307 · 3308 |
 | `db-peak-service` · `db-ascent-service` (PostgreSQL) | 5433 · 5434 |
 | RabbitMQ (AMQP · management) | 5672 · 15672 |
+| Mailpit (SMTP · bandeja de entrada) | 1025 · 8025 |
+
+Los correos de confirmación de cuenta no salen a internet en local: `auth-service` los envía a
+`mailpit`, y se leen en <http://localhost:8025>. En producción la misma implementación apunta al
+relay autenticado de OVH cambiando `EmailConfirmation__Smtp__*` (`DESIGN.md` §4.6).
 
 ## Trabajar con `dotnet ef` desde el host
 
