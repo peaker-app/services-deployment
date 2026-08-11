@@ -268,13 +268,32 @@ services:
     build:
       context: ../peaker-web/portal
       dockerfile: Dockerfile
+      args:
+        LEGAL_HOLDER: ${LEGAL_HOLDER:-}
+        LEGAL_TAX_ID: ${LEGAL_TAX_ID:-}
+        LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+        LEGAL_EMAIL: ${LEGAL_EMAIL:-}
+        LEGAL_DPO: ${LEGAL_DPO:-}
     restart: unless-stopped
     env_file:
       - ./config/web.env
-    ports:
-      - '3000:3000'
+    expose:
+      - '3000'
     depends_on:
       gateway:
+        condition: service_started
+
+  # ---------------- ingress (DESIGN.md §3.2) ----------------
+  ingress:
+    image: nginx:1.27-alpine
+    container_name: ingress
+    restart: unless-stopped
+    ports:
+      - '3000:80'
+    volumes:
+      - ./config/nginx/peaker.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      web:
         condition: service_started
 
   # ---------------- calidad (perfil quality) ----------------

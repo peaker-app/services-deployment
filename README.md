@@ -30,13 +30,19 @@ docker compose --profile quality up -d sonarqube          # SonarQube en :9000
 
 | Servicio | Puerto host |
 |---|---|
-| portal web | 3000 |
+| ingress (nginx) → portal web | 3000 |
 | gateway | 8080 |
 | auth · account · peak · ascent | 8081 · 8082 · 8083 · 8084 |
 | `db-auth-service` · `db-account-service` (MySQL) | 3307 · 3308 |
 | `db-peak-service` · `db-ascent-service` (PostgreSQL) | 5433 · 5434 |
 | RabbitMQ (AMQP · management) | 5672 · 15672 |
 | Mailpit (SMTP · bandeja de entrada) | 1025 · 8025 |
+
+El portal se sirve **detrás de un ingress nginx**, no directamente: `web` deja de publicar el 3000 y
+lo publica `ingress`, que fija `X-Forwarded-For` con la IP real del visitante. Sin esa cabecera el
+gateway ve siempre la IP del contenedor `web` y su rate limiting se convierte en un único cubo
+compartido por todo el portal (`DESIGN.md` §3.2). La URL de acceso no cambia:
+<http://localhost:3000>.
 
 Los correos de confirmación de cuenta no salen a internet en local: `auth-service` los envía a
 `mailpit`, y se leen en <http://localhost:8025>. En producción la misma implementación apunta al
