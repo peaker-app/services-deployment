@@ -7,8 +7,8 @@ services:
     container_name: rabbitmq
     restart: always
     ports:
-      - '5672:5672' # RabbitMQ port
-      - '15672:15672' # Management UI
+      - '127.0.0.1:5672:5672' # RabbitMQ port
+      - '127.0.0.1:15672:15672' # Management UI
     env_file:
       - ./config/auth-service.env
     volumes:
@@ -25,8 +25,8 @@ services:
     container_name: mailpit
     restart: unless-stopped
     ports:
-      - '1025:1025' # SMTP
-      - '8025:8025' # Bandeja de entrada web
+      - '127.0.0.1:1025:1025' # SMTP
+      - '127.0.0.1:8025:8025' # Bandeja de entrada web
     healthcheck:
       test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
@@ -57,7 +57,7 @@ services:
     env_file:
       - ./config/auth-service.env
     ports:
-      - '8081:8080'
+      - '127.0.0.1:8081:8080'
     depends_on:
       auth-migrator:
         condition: service_completed_successfully
@@ -74,7 +74,7 @@ services:
     env_file:
       - ./config/auth-service.env
     ports:
-      - '3307:3306'
+      - '127.0.0.1:3307:3306'
     volumes:
       # This volume is used to persist the database data
       - db-auth-service:/var/lib/mysql
@@ -108,7 +108,7 @@ services:
     env_file:
       - ./config/account-service.env
     ports:
-      - '8082:8080'
+      - '127.0.0.1:8082:8080'
     depends_on:
       account-migrator:
         condition: service_completed_successfully
@@ -123,7 +123,7 @@ services:
     env_file:
       - ./config/account-service.env
     ports:
-      - '3308:3306'
+      - '127.0.0.1:3308:3306'
     volumes:
       - db-account-service:/var/lib/mysql
     healthcheck:
@@ -156,7 +156,7 @@ services:
     env_file:
       - ./config/peak-service.env
     ports:
-      - '8083:8080'
+      - '127.0.0.1:8083:8080'
     depends_on:
       peak-migrator:
         condition: service_completed_successfully
@@ -184,7 +184,7 @@ services:
     env_file:
       - ./config/peak-service.env
     ports:
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - db-peak-service:/var/lib/postgresql/data
     healthcheck:
@@ -217,7 +217,7 @@ services:
     env_file:
       - ./config/ascent-service.env
     ports:
-      - '8084:8080'
+      - '127.0.0.1:8084:8080'
     depends_on:
       ascent-migrator:
         condition: service_completed_successfully
@@ -231,7 +231,7 @@ services:
     env_file:
       - ./config/ascent-service.env
     ports:
-      - '5434:5432'
+      - '127.0.0.1:5434:5432'
     volumes:
       - db-ascent-service:/var/lib/postgresql/data
     healthcheck:
@@ -251,7 +251,7 @@ services:
     env_file:
       - ./config/gateway.env
     ports:
-      - '8080:8080'
+      - '127.0.0.1:8080:8080'
     depends_on:
       auth-service:
         condition: service_started
@@ -303,7 +303,7 @@ services:
     profiles: ["quality"]
     restart: unless-stopped
     ports:
-      - '9000:9000'
+      - '127.0.0.1:9000:9000'
     environment:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
     volumes:
