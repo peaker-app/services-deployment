@@ -97,6 +97,42 @@ Si `auth-service` no responde al caducar la caché, los validadores siguen acept
 `Jwt__MetadataLastKnownGoodLifetime`, 24 h por defecto): una caída de auth degrada el alta de sesión,
 no tumba toda la autorización.
 
+## Cambiar la audiencia de los JWT
+
+Cada servicio que valida tokens declara **su** audiencia en `Jwt__Audiences__0`
+—`peaker-gateway`, `peaker-account`, `peaker-ascent`— y `auth-service` emite el `aud` como array
+con todas ellas en `AuthToken__Audiences__n`, más `AuthToken__SelfAudience` para la suya. Así, cuando
+llegue un quinto servicio, los tokens ya emitidos **no valen** contra él hasta que se le añada su
+audiencia explícitamente. `peak-service` no aparece: es catálogo público y no monta autenticación.
+
+Cambiar una audiencia rompe en los dos sentidos a la vez, así que **no se cambia de golpe**. El
+patrón es el mismo que el de la rotación de clave, con una ventana de solapamiento:
+
+1. Añadir la audiencia **nueva** al emisor, sin quitar la vieja, y reiniciar solo `auth-service`:
+
+   ```
+   AuthToken__Audiences__0=peaker-gateway
+   ...
+   AuthToken__Audiences__4=<audiencia nueva>
+   ```
+
+2. Añadir la audiencia nueva al validador que corresponda, junto a la que ya acepta, y reiniciarlo:
+
+   ```
+   Jwt__Audiences__0=<audiencia vieja>
+   Jwt__Audiences__1=<audiencia nueva>
+   ```
+
+3. **Esperar** `AuthToken__AccessTokenLifetime` (15 min) a que caduquen los tokens ya emitidos.
+
+4. Retirar la audiencia vieja de las dos partes y reiniciar. Si se retira antes de tiempo, todo
+   token vivo emitido con la anterior pasa a devolver `401`.
+
+Una audiencia mal escrita **ya no arranca en silencio**: `Jwt__Audiences` vacío detiene el servicio
+al arrancar, y `AuthToken__SelfAudience` fuera de `AuthToken__Audiences` detiene `auth-service`, que
+si no rechazaría los tokens que él mismo emite. Antes el síntoma era un `401` genérico,
+indistinguible de un token inválido.
+
 ## Outbox: mensajes aparcados y cómo desaparcarlos
 
 Todo lo crítico viaja en el outbox —correos, eventos de integración y la confirmación de los activos
