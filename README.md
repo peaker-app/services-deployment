@@ -97,6 +97,37 @@ Si `auth-service` no responde al caducar la caché, los validadores siguen acept
 `Jwt__MetadataLastKnownGoodLifetime`, 24 h por defecto): una caída de auth degrada el alta de sesión,
 no tumba toda la autorización.
 
+## Outbox: mensajes aparcados y cómo desaparcarlos
+
+Todo lo crítico viaja en el outbox —correos, eventos de integración y la confirmación de los activos
+de Cloudinary—, así que un mensaje que no sale es una pérdida silenciosa. El procesador reintenta con
+backoff exponencial acotado (`Outbox__RetryBackoffBase` → `Outbox__RetryBackoffCap`) y, al agotar
+`Outbox__MaxAttempts`, **aparca** el mensaje: deja de seleccionarlo y sigue con los de detrás. Antes
+lo reintentaba para siempre, y como el lote se ordena por antigüedad, un mensaje envenenado frenaba a
+todos los que venían después.
+
+El tope de 12 intentos no es arbitrario: un envío de correo aplazado por la cuota global de 150/hora
+(`DESIGN.md` §4.6) es un fallo **legítimo** que se recupera solo, y con esos plazos la ventana
+cubierta pasa de dos horas.
+
+Un mensaje aparcado se ve sin entrar en la base de datos: `/health/ready` pasa a **`Degraded`**
+—respondiendo 200, sin sacar el contenedor de servicio— y el log lleva el `LogWarning` con el
+recuento. La misma señal se publica como métrica (`ARCHITECTURE.md` §10).
+
+```bash
+docker compose exec db-auth-service \
+  mysql -u <usuario> -p peaker_auth -e \
+  "SELECT id, type, attempt_count, error FROM outbox_messages WHERE processed_at_utc IS NULL AND attempt_count >= 12;"
+```
+
+Desaparcar es **manual y deliberado**: primero se corrige la causa —un consumidor, una credencial,
+un contrato—, y solo después se reintenta. Un mensaje que vuelve a la cola sin arreglar nada se
+limita a gastar otros doce intentos.
+
+```sql
+UPDATE outbox_messages SET attempt_count = 0, next_attempt_at_utc = NULL WHERE id = '<id>';
+```
+
 ## Trabajar con `dotnet ef` desde el host
 
 `env_file:` solo inyecta variables dentro de un contenedor, así que `dotnet ef` no las recibe.
