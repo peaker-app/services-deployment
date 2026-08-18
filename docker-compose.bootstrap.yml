@@ -1,0 +1,26 @@
+name: peaker-app
+
+services:
+  ingress:
+    environment:
+      PEAKER_DOMAIN: ${PEAKER_DOMAIN:?falta PEAKER_DOMAIN en services-deployment/.env}
+      PEAKER_API_DOMAIN: ${PEAKER_API_DOMAIN:?falta PEAKER_API_DOMAIN en services-deployment/.env}
+      NGINX_ENVSUBST_FILTER: '^PEAKER_'
+    ports: !override
+      - '80:80'
+    volumes: !override
+      - ./config/nginx/bootstrap:/etc/nginx/templates:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on: !reset null
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    profiles: ["certbot"]
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+
+volumes:
+  certbot-conf:
+  certbot-www:

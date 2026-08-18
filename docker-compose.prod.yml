@@ -1,0 +1,83 @@
+name: peaker-app
+
+services:
+  auth-service:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    ports: !reset []
+    depends_on: !override
+      auth-migrator:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  account-service:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    ports: !reset []
+
+  peak-service:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    ports: !reset []
+
+  ascent-service:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    ports: !reset []
+
+  gateway:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    ports: !reset []
+
+  db-auth-service:
+    ports: !reset []
+
+  db-account-service:
+    ports: !reset []
+
+  db-peak-service:
+    ports: !reset []
+
+  db-ascent-service:
+    ports: !reset []
+
+  rabbitmq:
+    ports: !reset []
+
+  mailpit:
+    profiles: ["dev-mail"]
+
+  ingress:
+    environment:
+      PEAKER_DOMAIN: ${PEAKER_DOMAIN:?falta PEAKER_DOMAIN en services-deployment/.env}
+      PEAKER_API_DOMAIN: ${PEAKER_API_DOMAIN:?falta PEAKER_API_DOMAIN en services-deployment/.env}
+      NGINX_ENVSUBST_FILTER: '^PEAKER_'
+    ports: !override
+      - '80:80'
+      - '443:443'
+    volumes: !override
+      - ./config/nginx/prod:/etc/nginx/templates:ro
+      - certbot-conf:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      gateway:
+        condition: service_started
+    command: >-
+      /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint: >-
+      /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot;
+      sleep 12h & wait $${!}; done;'
+
+volumes:
+  certbot-conf:
+  certbot-www:

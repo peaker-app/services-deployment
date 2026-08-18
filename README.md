@@ -54,6 +54,172 @@ Los correos de confirmación de cuenta no salen a internet en local: `auth-servi
 `mailpit`, y se leen en <http://localhost:8025>. En producción la misma implementación apunta al
 relay autenticado de OVH cambiando `EmailConfirmation__Smtp__*` (`DESIGN.md` §4.6).
 
+## Desplegar en producción: TLS y entorno `Production`
+
+Producción se levanta con **el fichero base más un overlay**, nunca con el base a secas:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d   # producción
+docker compose up -d                                                    # desarrollo, sin cambios
+```
+
+`docker-compose.prod.yml` hace cuatro cosas: pone los cinco servicios en
+`ASPNETCORE_ENVIRONMENT=Production` mediante `environment:`, que tiene precedencia sobre `env_file:`
+—así los `config/*.env` siguen siendo los de desarrollo y no hay dos juegos que mantener—; despublica
+todos los puertos del host salvo el 80 y el 443 del `ingress`; aparca `mailpit` bajo el perfil
+`dev-mail`; y añade `certbot` con su volumen de certificados.
+
+Poner `Production` **apaga Swagger** en los cuatro servicios y en el gateway, **exige**
+`AuthToken__PrivateKeyPem` en `auth-service` —sin ella cada reinicio firmaría con una clave distinta
+e invalidaría los tokens vivos— y **exige** que el SMTP vaya cifrado y autenticado. Las tres son
+validaciones con `ValidateOnStart`: el flag y los secretos se ponen en el mismo despliegue, no en dos.
+
+### Antes de empezar
+
+- Registros `A` para `<dominio>` y `api.<dominio>` apuntando a la IP del VPS, **propagados**. La
+  validación de Let's Encrypt entra desde internet resolviendo por DNS público: esto no se puede
+  probar en local. Comprobar con `dig +short <dominio>` y `dig +short api.<dominio>`.
+- Puertos **80 y 443 abiertos** (`sudo ufw status` y, si está activado, el Network Firewall del panel
+  de OVH). El 80 **no se puede cerrar después**: se necesita en cada renovación.
+- `services-deployment/.env` creado a partir de `.env.example`, con `PEAKER_DOMAIN`,
+  `PEAKER_API_DOMAIN`, `NEXT_PUBLIC_SITE_URL`, los `LEGAL_*` y, si ya hay proveedor de teselas, las
+  dos `NEXT_PUBLIC_MAP_*`.
+
+Hacen falta **dos nombres**, no uno: `GATEWAY_URL` no lleva prefijo `NEXT_PUBLIC_`, así que solo lo
+usa el BFF del portal en servidor y el navegador nunca habla con el gateway — pero **la app móvil
+sí**, por `VITE_GATEWAY_URL`.
+
+| Nombre | Va a | Lo consume |
+|---|---|---|
+| `<dominio>` | `web:3000` | el portal, y su BFF por dentro |
+| `api.<dominio>` | `gateway:8080` | solo la app móvil |
+
+### Paso 1 — emitir el certificado, en dos tiempos
+
+Hay un problema del huevo y la gallina: nginx no arranca con un bloque `ssl_certificate` que apunte a
+un fichero que aún no existe. Por eso la primera emisión se hace con una configuración solo-HTTP, que
+es lo que monta `docker-compose.bootstrap.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml up -d ingress
+```
+
+Ese overlay deja el `ingress` sirviendo únicamente `/.well-known/acme-challenge/` en el puerto 80, sin
+`depends_on`, de modo que no arrastra ni el portal ni el gateway.
+
+El ensayo **no es opcional**: Let's Encrypt limita a 5 validaciones fallidas por hora, y `--dry-run`
+hace el baile completo contra su entorno de pruebas sin gastar cuota real.
+
+```bash
+# Ensayo. Si esto falla, el DNS o el puerto 80 no están bien.
+docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml \
+  run --rm certbot certonly --webroot -w /var/www/certbot \
+  -d "$PEAKER_DOMAIN" -d "$PEAKER_API_DOMAIN" \
+  --email <correo> --agree-tos --no-eff-email --dry-run
+
+# De verdad: el mismo comando sin --dry-run.
+```
+
+Un solo certificado cubre los dos nombres (`-d` repetido). Al terminar existe
+`/etc/letsencrypt/live/<dominio>/fullchain.pem` dentro del volumen `certbot-conf`.
+
+**`certbot-conf` es un volumen con nombre a propósito: sobrevive a `docker compose down`.** Sin él,
+cada recreación pediría certificados nuevos, y Let's Encrypt corta a los 5 duplicados por semana: te
+quedarías sin HTTPS durante días.
+
+### Paso 2 — la cascada de URLs
+
+TLS no es solo el certificado. Hay URLs incrustadas en varios sitios y ninguna se corrige sola:
+
+| Dónde | Variable | A qué |
+|---|---|---|
+| `config/auth-service.env` | `EmailConfirmation__ConfirmationLinkTemplate` | `https://<dominio>/confirm-email?token={token}` |
+| " | `EmailConfirmation__SignInLink` | `https://<dominio>/login` |
+| " | `EmailConfirmation__PasswordResetLinkTemplate` | `https://<dominio>/reset-password?token={token}` |
+| " | `EmailConfirmation__Smtp__*` | el relay de OVH: `ssl0.ovh.net`, `587`, `StartTls`, con credenciales |
+| `.env` (raíz) | `NEXT_PUBLIC_SITE_URL` | `https://<dominio>` — **build arg** |
+| `peaker-mobile/app/.env` | `VITE_GATEWAY_URL` | `https://api.<dominio>` |
+| " | `VITE_SITE_URL` | `https://<dominio>` |
+
+Las `NEXT_PUBLIC_*` y los `LEGAL_*` son **argumentos de construcción**: Next las incrusta en el bundle
+durante `npm run build`. Ponerlas en `config/web.env` no tiene ningún efecto. Cambiarlas obliga a
+`docker compose ... build web`, no basta con reiniciar.
+
+### Paso 3 — levantar producción
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml down
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build web
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+El `ingress` pasa a montar `config/nginx/prod/`, con los dos `server` de 443. Las plantillas las
+rellena el propio entrypoint de la imagen de nginx pasando `envsubst` sobre
+`/etc/nginx/templates/*.template`; `NGINX_ENVSUBST_FILTER=^PEAKER_` limita la sustitución a nuestras
+dos variables, para que `$host`, `$remote_addr` y `$connection_upgrade` lleguen intactos a nginx.
+
+El `command` del `ingress` recarga nginx cada 6 h. No es decorativo: nginx **no relee el certificado
+renovado por su cuenta**, así que sin esa recarga seguirías sirviendo el viejo hasta que caduque.
+
+### Paso 4 — verificación
+
+```bash
+curl -sI https://<dominio>                    # 200, con Strict-Transport-Security
+curl -sI http://<dominio>                     # 308 hacia https
+curl -s  https://api.<dominio>/health/ready   # Healthy, y el check `jwks` en verde
+curl -sI https://<dominio>/swagger            # 404: Production apaga Swagger
+```
+
+La prueba que de verdad cierra el despliegue no es un `curl`: **login en el portal, y comprobar en las
+DevTools que `peaker_at` llega con `Secure` y que la sesión sobrevive a recargar la página.** El
+portal fija `secure` en función de `NODE_ENV`, que ya vale `production`, así que sobre `http://` el
+navegador descarta la cookie en silencio: el login responde 200 y el usuario sigue anónimo.
+
+### Paso 5 — subir HSTS, y solo entonces
+
+Las plantillas salen con `Strict-Transport-Security "max-age=300"`. Es deliberado: **HSTS es la única
+cabecera de esta lista que no se puede deshacer.** Si publicas `max-age=31536000` y el certificado
+falla, los navegadores que ya vieron la cabecera se niegan a conectar durante un año.
+
+Una vez verificado el paso 4 y la renovación en seco, subirla en `config/nginx/prod/peaker.conf.template`
+—los dos bloques de 443— y recargar:
+
+```
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart ingress
+```
+
+### Paso 6 — probar la renovación **el primer día**
+
+Es el fallo clásico: todo funciona, y a los 60 días el certificado no se renueva porque el puerto 80
+se cerró «ya que todo va por HTTPS» o porque el volumen no era persistente. En seco cuesta un minuto:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  run --rm --entrypoint certbot certbot renew --dry-run
+```
+
+**`--entrypoint certbot` no es opcional aquí.** En el overlay de producción el `entrypoint` del
+servicio es el bucle de renovación cada 12 h; sin sustituirlo, los argumentos `renew --dry-run` se
+pasarían al `sh -c` del bucle y no harían nada, dando un falso verde.
+
+### Por qué `Jwt__RequireHttpsMetadata` sigue en `false`
+
+Es la duda que reaparece cada vez que alguien revisa esta configuración. `Jwt__Authority` es
+`http://auth-service:8080`, un nombre de la red interna de Compose. `Common.API/Security/JwtExtensions.cs`
+construye el `ConfigurationManager` con `new HttpDocumentRetriever { RequireHttps = ... }`, que rechaza
+una URL `http:` **antes de pedirla**. Subirlo a `true` dejaría al gateway, a `account-service` y a
+`ascent-service` sin poder descargar el JWKS: todas las peticiones autenticadas responderían 401 y el
+check `jwks` de `/health/ready` quedaría en rojo.
+
+Ese salto no sale de la red bridge de Compose ni cruza el host. El TLS que importa se termina en el
+`ingress`. La alternativa —apuntar la autoridad a `https://api.<dominio>`— obligaría a los servicios a
+salir a internet y volver por nginx solo para leer sus propias claves, con una dependencia de arranque
+circular. No se hace.
+
 ## Rotar la clave de firma de los JWT
 
 `auth-service` es el emisor único y custodio de la clave privada RS256; el resto de servicios
