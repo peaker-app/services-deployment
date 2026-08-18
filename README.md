@@ -141,6 +141,13 @@ TLS no es solo el certificado. Hay URLs incrustadas en varios sitios y ninguna s
 | `peaker-mobile/app/.env` | `VITE_GATEWAY_URL` | `https://api.<dominio>` |
 | " | `VITE_SITE_URL` | `https://<dominio>` |
 
+`AUTH_COOKIE_SECURE` no está en esa tabla porque **no hay que tocarla**: vale `false` en
+`config/web.env` y el overlay de producción la fuerza a `true`. Existe porque el contenedor sirve un
+build de producción de Next, así que `NODE_ENV` vale `production` también en desarrollo; sin la
+variable, el stack local marcaría las cookies como `Secure` sobre HTTP. En `http://localhost` cuela
+—los navegadores lo tratan como origen seguro—, pero rompe el login en cuanto entras por la IP de la
+LAN o por `10.0.2.2` desde el emulador de Android.
+
 Las `NEXT_PUBLIC_*` y los `LEGAL_*` son **argumentos de construcción**: Next las incrusta en el bundle
 durante `npm run build`. Ponerlas en `config/web.env` no tiene ningún efecto. Cambiarlas obliga a
 `docker compose ... build web`, no basta con reiniciar.

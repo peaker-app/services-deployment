@@ -49,6 +49,10 @@ services:
   mailpit:
     profiles: ["dev-mail"]
 
+  web:
+    environment:
+      AUTH_COOKIE_SECURE: "true"
+
   ingress:
     environment:
       PEAKER_DOMAIN: ${PEAKER_DOMAIN:?falta PEAKER_DOMAIN en services-deployment/.env}
