@@ -134,7 +134,6 @@ TLS no es solo el certificado. Hay URLs incrustadas en varios sitios y ninguna s
 | Dónde | Variable | A qué |
 |---|---|---|
 | `config/auth-service.env` | `EmailConfirmation__ConfirmationLinkTemplate` | `https://<dominio>/confirm-email?token={token}` |
-| " | `EmailConfirmation__SignInLink` | `https://<dominio>/login` |
 | " | `EmailConfirmation__PasswordResetLinkTemplate` | `https://<dominio>/reset-password?token={token}` |
 | " | `EmailConfirmation__Smtp__*` | el relay de OVH: `ssl0.ovh.net`, `587`, `StartTls`, con credenciales |
 | `.env` (raíz) | `NEXT_PUBLIC_SITE_URL` | `https://<dominio>` — **build arg** |
