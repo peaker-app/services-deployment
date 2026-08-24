@@ -1,0 +1,12 @@
+server {
+    listen 80;
+    server_name ${PEAKER_DOMAIN} ${PEAKER_API_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 404;
+    }
+}

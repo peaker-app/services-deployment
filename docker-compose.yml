@@ -1,0 +1,327 @@
+name: peaker-app
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:4.3.3-management-alpine
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - '127.0.0.1:5672:5672' # RabbitMQ port
+      - '127.0.0.1:15672:15672' # Management UI
+    env_file:
+      - ./config/auth-service.env
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:1025:1025' # SMTP
+      - '127.0.0.1:8025:8025' # Bandeja de entrada web
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ---------------- auth ----------------
+  auth-migrator:
+    container_name: auth-migrator
+    build:
+      context: ..
+      dockerfile: auth-service/AuthService/AuthService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/auth-service.env
+    depends_on:
+      db-auth-service:
+        condition: service_healthy
+
+  auth-service:
+    container_name: auth-service
+    build:
+      context: ..
+      dockerfile: auth-service/AuthService/AuthService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/auth-service.env
+    ports:
+      - '127.0.0.1:8081:8080'
+    depends_on:
+      auth-migrator:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+
+  db-auth-service:
+    container_name: db-auth-service
+    image: mysql:8.4
+    command: --innodb-buffer-pool-size=256M
+    restart: always
+    env_file:
+      - ./config/auth-service.env
+    ports:
+      - '127.0.0.1:3307:3306'
+    volumes:
+      # This volume is used to persist the database data
+      - db-auth-service:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- account ----------------
+  account-migrator:
+    container_name: account-migrator
+    build:
+      context: ..
+      dockerfile: account-service/AccountService/AccountService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/account-service.env
+    depends_on:
+      db-account-service:
+        condition: service_healthy
+
+  account-service:
+    container_name: account-service
+    build:
+      context: ..
+      dockerfile: account-service/AccountService/AccountService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/account-service.env
+    ports:
+      - '127.0.0.1:8082:8080'
+    depends_on:
+      account-migrator:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  db-account-service:
+    container_name: db-account-service
+    image: mysql:8.4
+    command: --innodb-buffer-pool-size=256M
+    restart: always
+    env_file:
+      - ./config/account-service.env
+    ports:
+      - '127.0.0.1:3308:3306'
+    volumes:
+      - db-account-service:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- peak ----------------
+  peak-migrator:
+    container_name: peak-migrator
+    build:
+      context: ..
+      dockerfile: peak-service/PeakService/PeakService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/peak-service.env
+    depends_on:
+      db-peak-service:
+        condition: service_healthy
+
+  peak-service:
+    container_name: peak-service
+    build:
+      context: ..
+      dockerfile: peak-service/PeakService/PeakService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/peak-service.env
+    ports:
+      - '127.0.0.1:8083:8080'
+    depends_on:
+      peak-migrator:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  peak-ingestion:
+    container_name: peak-ingestion
+    profiles: ["ingestion"]
+    build:
+      context: ..
+      dockerfile: peak-service/PeakService/PeakService.API/Dockerfile
+      target: worker
+    restart: "no"
+    env_file:
+      - ./config/peak-service.env
+    depends_on:
+      peak-migrator:
+        condition: service_completed_successfully
+
+  db-peak-service:
+    container_name: db-peak-service
+    image: postgis/postgis:16-3.4
+    restart: always
+    env_file:
+      - ./config/peak-service.env
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - db-peak-service:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- ascent ----------------
+  ascent-migrator:
+    container_name: ascent-migrator
+    build:
+      context: ..
+      dockerfile: ascent-service/AscentService/AscentService.API/Dockerfile
+      target: migrator
+    restart: "no"
+    env_file:
+      - ./config/ascent-service.env
+    depends_on:
+      db-ascent-service:
+        condition: service_healthy
+
+  ascent-service:
+    container_name: ascent-service
+    build:
+      context: ..
+      dockerfile: ascent-service/AscentService/AscentService.API/Dockerfile
+    restart: always
+    env_file:
+      - ./config/ascent-service.env
+    ports:
+      - '127.0.0.1:8084:8080'
+    depends_on:
+      ascent-migrator:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  db-ascent-service:
+    container_name: db-ascent-service
+    image: postgres:16-alpine
+    restart: always
+    env_file:
+      - ./config/ascent-service.env
+    ports:
+      - '127.0.0.1:5434:5432'
+    volumes:
+      - db-ascent-service:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  # ---------------- gateway ----------------
+  gateway:
+    container_name: gateway
+    build:
+      context: ..
+      dockerfile: api-gateway/ApiGateway/ApiGateway/Dockerfile
+    restart: always
+    env_file:
+      - ./config/gateway.env
+    ports:
+      - '127.0.0.1:8080:8080'
+    depends_on:
+      auth-service:
+        condition: service_started
+      account-service:
+        condition: service_started
+      peak-service:
+        condition: service_started
+      ascent-service:
+        condition: service_started
+
+  # ---------------- portal web (Next.js) ----------------
+  web:
+    container_name: web
+    build:
+      context: ../peaker-web/portal
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_MAP_TILE_URL: ${NEXT_PUBLIC_MAP_TILE_URL:-}
+        NEXT_PUBLIC_MAP_ATTRIBUTION: ${NEXT_PUBLIC_MAP_ATTRIBUTION:-}
+        NEXT_PUBLIC_MAP_PROVIDER_NAME: ${NEXT_PUBLIC_MAP_PROVIDER_NAME:-}
+        NEXT_PUBLIC_MAP_ENABLED: ${NEXT_PUBLIC_MAP_ENABLED:-}
+        LEGAL_HOLDER: ${LEGAL_HOLDER:-}
+        LEGAL_TAX_ID: ${LEGAL_TAX_ID:-}
+        LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+        LEGAL_EMAIL: ${LEGAL_EMAIL:-}
+        LEGAL_DPO: ${LEGAL_DPO:-}
+    restart: unless-stopped
+    env_file:
+      - ./config/web.env
+    expose:
+      - '3000'
+    depends_on:
+      gateway:
+        condition: service_started
+
+  # ---------------- ingress (DESIGN.md §3.2) ----------------
+  ingress:
+    image: nginx:1.27-alpine
+    container_name: ingress
+    restart: unless-stopped
+    ports:
+      - '3000:80'
+    volumes:
+      - ./config/nginx/peaker.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      web:
+        condition: service_started
+
+  # ---------------- calidad (perfil quality) ----------------
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube
+    profiles: ["quality"]
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:9000:9000'
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+
+volumes:
+  db-auth-service:
+  db-account-service:
+  db-peak-service:
+  db-ascent-service:
+  rabbitmq:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:
